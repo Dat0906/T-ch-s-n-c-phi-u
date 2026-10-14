@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hành trình Lãi Kép - Mô phỏng đầu tư 20 năm</title>
+<!-- Chart.js qua CDN (cần internet để vẽ biểu đồ) -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+/* ===== 1. BIẾN MÀU & NỀN TẢNG ===== */
+:root{
+  --bg:#0a1020; --panel:#121a2d; --panel2:#18223a; --line:#26324f;
+  --text:#e8edf7; --mute:#8b97b3;
+  --up:#16c784; --down:#ea3943; --gold:#f0b429; --blue:#4c8dff;
+}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--text);font:15px/1.5 "Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;min-height:100vh}
+.wrap{max-width:1100px;margin:0 auto;padding:16px}
+h1{font-size:20px;letter-spacing:.2px}
+h2{font-size:18px;margin-bottom:10px}
+.num{font-variant-numeric:tabular-nums}
+.up{color:var(--up)} .down{color:var(--down)} .mute{color:var(--mute)}
+.hidden{display:none!important}
+
+/* ===== 2. THÀNH PHẦN CHUNG ===== */
+header.top{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0 14px;flex-wrap:wrap}
+.chip{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:13px;color:var(--mute)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+label{display:block;font-size:13px;color:var(--mute);margin-bottom:4px}
+input,select{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:10px;font-size:15px}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+button{cursor:pointer;border:0;border-radius:8px;padding:12px 18px;font-size:15px;font-weight:600;background:var(--up);color:#04170f}
+button:hover{filter:brightness(1.1)}
+button.ghost{background:var(--panel2);color:var(--text);border:1px solid var(--line)}
+.grid{display:grid;gap:12px}
+.g3{grid-template-columns:repeat(3,1fr)} .g2{grid-template-columns:repeat(2,1fr)}
+
+/* ===== 3. MÀN HÌNH BẮT ĐẦU ===== */
+.styles{grid-template-columns:repeat(3,1fr);margin-top:6px}
+.scard{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px;cursor:pointer;text-align:left}
+.scard b{display:block;margin-bottom:2px}
+.scard small{color:var(--mute);display:block;font-size:12.5px}
+.scard.sel{border-color:var(--up);box-shadow:0 0 0 1px var(--up) inset}
+.risk{font-size:12px;margin-top:6px;display:inline-block}
+.gold{color:var(--gold)}
+.badge{display:inline-block;background:var(--gold);color:#241a00;font-size:11.5px;font-weight:700;border-radius:999px;padding:1px 8px;margin-bottom:4px}
+
+/* ===== 4. DASHBOARD ===== */
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+.stat .v{font-size:22px;font-weight:700;margin-top:2px}
+.stat.big{border-color:var(--up)} .stat.big .v{font-size:28px}
+.stat small{color:var(--mute);font-size:12.5px}
+.banner{border-left:4px solid var(--gold);background:var(--panel2);padding:12px 14px;border-radius:8px;margin-bottom:12px}
+.banner.bad{border-color:var(--down)} .banner.good{border-color:var(--up)}
+.chartbox{position:relative;height:320px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}
+th{color:var(--mute);font-weight:500}
+.scroll{overflow-x:auto}
+
+/* ===== 5. POPUP ===== */
+.overlay{position:fixed;inset:0;background:rgba(3,7,18,.78);display:flex;align-items:center;justify-content:center;padding:12px;z-index:10;overflow:auto}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;width:100%;max-width:520px}
+.seg{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px}
+.seg button{background:var(--bg);color:var(--text);border:1px solid var(--line);padding:9px 4px;font-size:13px}
+.seg button.on{border-color:var(--up);color:var(--up)}
+.row{margin-bottom:12px}
+
+/* ===== 6. RESPONSIVE ===== */
+@media(max-width:760px){
+  .g3,.styles{grid-template-columns:repeat(2,1fr)}
+  .chartbox{height:240px}
+  .stat .v{font-size:18px} .stat.big .v{font-size:22px}
+}
+@media(max-width:480px){ .styles{grid-template-columns:1fr} .g3{grid-template-columns:1fr 1fr} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>📈 Hành trình Lãi Kép</h1>
+    <span class="chip hidden" id="hdrInfo"></span>
+  </header>
+
+  <!-- ====== MÀN HÌNH 1: THIẾT LẬP ====== -->
+  <section id="start" class="panel">
+    <h2>Bắt đầu hành trình 20 năm</h2>
+    <div class="grid g3 row">
+      <div><label>Vốn ban đầu (triệu đồng)</label><input id="cap" type="number" min="0" value="100"></div>
+      <div><label>Tuổi hiện tại</label><input id="age" type="number" min="18" max="60" value="25"></div>
+      <div><label>Lương mỗi năm (triệu đồng)</label><input id="sal" type="number" min="1" value="240"></div>
+    </div>
+    <label>Chọn phong cách đầu tư mặc định (có thể đổi mỗi năm, mất 2% phí)</label>
+    <div class="grid styles" id="styleCards"></div>
+    <p style="margin-top:16px"><button id="goBtn">Bắt đầu đầu tư</button></p>
+  </section>
+
+  <!-- ====== MÀN HÌNH 2: DASHBOARD ====== -->
+  <section id="game" class="hidden">
+    <div id="eventBanner"></div>
+    <div class="grid g3" id="stats"></div>
+    <div class="panel" style="margin-top:12px">
+      <h2>Đường cong tài sản</h2>
+      <div class="chartbox"><canvas id="mainChart"></canvas></div>
+    </div>
+    <p style="margin:12px 0"><button id="nextBtn">Bắt đầu năm 1</button></p>
+    <div class="panel">
+      <h2>Nhật ký các năm</h2>
+      <div class="scroll"><table id="log"></table></div>
+    </div>
+  </section>
+
+  <!-- ====== MÀN HÌNH 3: TỔNG KẾT ====== -->
+  <section id="end" class="hidden">
+    <div class="panel" style="margin-bottom:12px">
+      <h2>Tổng kết sau 20 năm</h2>
+      <div class="scroll"><table id="cmp"></table></div>
+    </div>
+    <div class="panel" style="margin-bottom:12px">
+      <h2>So sánh 4 kịch bản</h2>
+      <div class="chartbox"><canvas id="endChart"></canvas></div>
+    </div>
+    <div class="panel" id="lessons" style="margin-bottom:12px"></div>
+    <button id="againBtn">Chơi lại</button>
+  </section>
+</div>
+
+<!-- POPUP QUYẾT ĐỊNH HÀNG NĂM -->
+<div class="overlay hidden" id="overlay"><div class="modal" id="modal"></div></div>
+
+<script>
+/* =========================================================
+   1. DỮ LIỆU GIẢ LẬP
+   ========================================================= */
+const YEARS = 20;          // số năm của trò chơi
+const SWITCH_FEE = 0.02;   // phí/thuế khi đổi phong cách
+// Lợi suất thị trường (index) giả lập: chu kỳ tăng/giảm đan xen, trung bình ~9%/năm
+const MARKET = [0.14,0.18,-0.04,0.22,-0.32,0.20,0.20,0.09,0.11,-0.10,
+                0.26,0.14,0.07,-0.18,0.30,0.17,0.10,0.12,-0.06,0.20];
+
+const STYLES = {
+  index:    {name:'Mua & Giữ Index', risk:'Rủi ro thấp', col:'up',   desc:'Theo sát thị trường, lãi trung bình 8-10%/năm.'},
+  value:    {name:'Value Investing', risk:'Rủi ro vừa',  col:'gold', desc:'Ổn định, giảm nhẹ khi thị trường sập, thỉnh thoảng đột biến nhẹ.'},
+  growth:   {name:'Growth / Momentum', risk:'Rủi ro cao', col:'gold', desc:'Tăng mạnh khi bull market, giảm sâu khi bear market.'},
+  dividend: {name:'Cổ tức (Dividend)', risk:'Rủi ro thấp', col:'up', desc:'Dòng tiền đều: cổ tức ~4% cộng vốn tăng nhẹ.'},
+  dca:      {name:'Tích sản hàng tháng', risk:'Rủi ro vừa', col:'gold', desc:'Chia tiền nạp thành 12 phần, mua Index vào mỗi tháng trong năm.'},
+  crypto:   {name:'Crypto', risk:'Cực cao', col:'down', desc:'Biến động cực mạnh: có thể x5 tài khoản hoặc chia 10.'},
+  lev:      {name:'Đòn bẩy (Margin)', risk:'Cực cao', col:'down', desc:'Biến động gấp 3 lần thị trường, thị trường sập sâu là cháy tài khoản.'}
+};
+
+// Lợi suất của từng phong cách trong 1 năm, dựa vào lợi suất thị trường m
+function styleReturn(k, m){
+  switch(k){
+    case 'index': case 'dca': return m;
+    case 'value':    return 0.03 + 0.6*m + (Math.random()<0.15 ? 0.06 : 0);
+    case 'growth':   return -0.01 + 1.5*m;
+    case 'dividend': return 0.045 + 0.35*m;
+    case 'crypto': {
+      const x = Math.random();
+      if(x < 0.07) return 4 + Math.random();   // x5 - x6
+      if(x < 0.17) return -0.9;                // chia 10
+      return Math.max(-0.8, 2.5*m + (Math.random()-0.4)*0.8);
+    }
+    case 'lev':      return Math.max(-1, 3*m - 0.03); // -1 = cháy tài khoản
+  }
+}
+
+// Các sự kiện ngẫu nhiên
+const EVENTS = {
+  baby:  {t:'👶 Sinh con',            cls:'',     d:'Chi phí sinh nở lấy từ danh mục, thu nhập có thể đầu tư giảm 10%.'},
+  job:   {t:'💼 Mất việc',            cls:'bad',  d:'Năm nay không có thu nhập để nạp thêm, phải rút tiền chi tiêu.'},
+  raise: {t:'🎉 Được tăng lương 15%', cls:'good', d:'Thu nhập tăng, bạn có thêm tiền để đầu tư.'},
+  bear:  {t:'📉 Thị trường sập (Bear market)', cls:'bad',  d:'Tin tức hoảng loạn khắp nơi. Bạn sẽ bình tĩnh hay bán tháo?'},
+  bull:  {t:'🚀 Thị trường uptrend mạnh',      cls:'good', d:'Ai cũng khoe lãi. Bạn có bị FOMO không?'}
+};
+
+/* =========================================================
+   2. TIỆN ÍCH
+   ========================================================= */
+const $ = id => document.getElementById(id);
+// Định dạng tiền VND gọn: 1,25 tỷ / 120,5 tr / số thường
+function fmt(v){
+  const a = Math.abs(v), s = v < 0 ? '-' : '';
+  if(a >= 1e9) return s + (a/1e9).toFixed(2).replace('.',',') + ' tỷ';
+  if(a >= 1e6) return s + (a/1e6).toFixed(1).replace('.',',') + ' tr';
+  return s + Math.round(a).toLocaleString('vi-VN') + ' ₫';
+}
+const pct = v => (v>=0?'+':'') + (v*100).toFixed(1).replace('.',',') + '%';
+// Công thức lãi kép: A = P(1+r/n)^(nt) + PMT*(((1+r/n)^(nt)-1)/(r/n))
+function compound(P, PMT, r, n, t){
+  const k = Math.pow(1 + r/n, n*t);
+  return P*k + (r === 0 ? PMT*n*t : PMT*((k-1)/(r/n)));
+}
+
+/* =========================================================
+   3. TRẠNG THÁI GAME
+   ========================================================= */
+let g, mainChart, endChart, pickedStart = 'index';
+
+// Vẽ thẻ chọn phong cách ở màn hình bắt đầu
+function renderStyleCards(){
+  $('styleCards').innerHTML = Object.entries(STYLES).map(([k,s]) =>
+    `<div class="scard ${k===pickedStart?'sel':''}" data-k="${k}" tabindex="0">
+      <b>${s.name}</b><small>${s.desc}</small><span class="risk ${s.col==='up'?'up':s.col==='down'?'down':''}" ${s.col==='gold'?'style="color:var(--gold)"':''}>${s.risk}</span></div>`).join('');
+  document.querySelectorAll('.scard').forEach(el => el.onclick = () => { pickedStart = el.dataset.k; renderStyleCards(); });
+}
+
+function startGame(){
+  const cap = +$('cap').value*1e6, age = +$('age').value, sal = +$('sal').value*1e6;
+  if(!(cap >= 0) || !(age >= 18 && age <= 60) || !(sal > 0)){ alert('Vui lòng nhập vốn ≥ 0, tuổi 18-60 và lương > 0.'); return; }
+  g = {year:0, age, salary:sal, initial:cap, dep:0, wd:0, fees:0, bal:cap, style:pickedStart,
+       rows:[], assets:[cap], contrib:[cap], mkts:[], offset:Math.floor(Math.random()*MARKET.length),
+       kids:0, jobLost:false, ev:null, mOver:null, forced:0,
+       pe:14+Math.random()*8, pb:1.6+Math.random()*1.4}; // định giá thị trường ban đầu
+  $('start').classList.add('hidden'); $('game').classList.remove('hidden'); $('hdrInfo').classList.remove('hidden');
+  render();
+}
+
+const clamp = (v,a,b) => Math.min(b, Math.max(a, v));
+// Đánh giá định giá thị trường theo P/E và P/B
+function valZone(){
+  const s = (g.pe<14?-1:g.pe>21?1:0) + (g.pb<1.8?-1:g.pb>3.2?1:0);
+  if(s <= -1) return {t:'Hấp dẫn', c:'up',   h:'Thị trường đang rẻ: lịch sử cho thấy đây là lúc tích sản nhiều hơn, đừng bán tháo.'};
+  if(s >= 1)  return {t:'Đắt / Cao', c:'down', h:'Thị trường đang đắt: rủi ro điều chỉnh lớn, tránh dồn vốn một lần, hãy tích sản đều và giữ tiền dự phòng.'};
+  return {t:'Hợp lý', c:'gold', h:'Định giá hợp lý: cứ tích sản đều đặn và kiên nhẫn.'};
+}
+// Mô phỏng 1 năm tích sản hàng tháng: dòng tiền chia 12 phần, đường giá có nhiễu nhưng tổng lợi suất năm = m
+function dcaYear(start, flow, m){
+  const L = Math.log(1 + Math.max(m, -0.99))/12;
+  const noise = Array.from({length:12}, () => (Math.random()-0.5)*0.12);
+  const avg = noise.reduce((a,x) => a+x, 0)/12;
+  let b = start;
+  for(let j = 0; j < 12; j++) b = Math.max(0, (b + flow/12) * Math.exp(L + noise[j] - avg));
+  return b;
+}
+
+// Thu nhập có thể đem đi đầu tư trong năm
+const investable = () => g.jobLost ? 0 : g.salary * Math.max(0.4, 1 - 0.1*g.kids);
+
+/* =========================================================
+   4. DASHBOARD
+   ========================================================= */
+function render(){
+  const net = g.initial + g.dep - g.wd, pl = g.bal - net;
+  const pmt = g.year ? g.dep/g.year : 0;
+  const proj = compound(g.bal, pmt, 0.08, 1, YEARS - g.year);
+  const vz = valZone();
+  $('hdrInfo').textContent = `Năm ${g.year}/${YEARS} · Tuổi ${g.age + g.year} · Lương ${fmt(g.salary)}/năm`;
+  $('stats').innerHTML = `
+    <div class="stat"><small>Vốn ban đầu</small><div class="v num">${fmt(g.initial)}</div></div>
+    <div class="stat"><small>Tổng tiền đã nạp thêm</small><div class="v num">${fmt(g.dep)}</div><small>Đã rút/chi: ${fmt(g.wd)}</small></div>
+    <div class="stat big"><small>Tổng tài sản hiện tại</small><div class="v num ${pl>=0?'up':'down'}">${fmt(g.bal)}</div></div>
+    <div class="stat"><small>Lãi/lỗ ròng</small><div class="v num ${pl>=0?'up':'down'}">${fmt(pl)}</div><small>${net>0?pct(pl/net):'—'} trên vốn bỏ ra</small></div>
+    <div class="stat"><small>Phong cách hiện tại</small><div class="v" style="font-size:17px">${STYLES[g.style].name}</div><small>${STYLES[g.style].risk}</small></div>
+    <div class="stat"><small>Dự phóng năm ${YEARS} (giả định 8%/năm)</small><div class="v num">${fmt(proj)}</div><small>Theo công thức lãi kép</small></div>
+    <div class="stat" style="grid-column:1/-1"><small>Định giá thị trường</small>
+      <div class="v num">P/E ${g.pe.toFixed(1)} · P/B ${g.pb.toFixed(1)} <span class="${vz.c}" style="font-size:16px">${vz.t}</span></div><small>${vz.h}</small></div>`;
+
+  // Banner sự kiện
+  const e = g.ev;
+  $('eventBanner').innerHTML = e ? `<div class="banner ${e.cls}"><b>Năm ${g.year}: ${e.t}</b><br><span class="mute">${e.d}</span></div>` : '';
+
+  // Bảng nhật ký (mới nhất ở trên)
+  $('log').innerHTML = `<tr><th>Năm</th><th>Sự kiện</th><th>Dòng tiền</th><th>P/E</th><th>Thị trường</th><th>Lợi suất bạn</th><th>Tài sản</th></tr>` +
+    g.rows.slice().reverse().map(r => `<tr><td>${r.y}</td><td>${r.ev}</td>
+      <td class="num ${r.flow>=0?'up':'down'}">${fmt(r.flow)}</td>
+      <td class="num">${r.pe.toFixed(1)}</td><td class="num ${r.m>=0?'up':'down'}">${pct(r.m)}</td>
+      <td class="num ${r.r>=0?'up':'down'}">${pct(r.r)}</td><td class="num">${fmt(r.bal)}</td></tr>`).join('');
+
+  // Biểu đồ chính
+  const labels = g.assets.map((_, i) => 'Năm ' + i);
+  const ds = [{label:'Tổng tài sản', data:g.assets, borderColor:'#16c784', backgroundColor:'rgba(22,199,132,.12)', fill:true, tension:.25},
+              {label:'Tiền thực bỏ ra', data:g.contrib, borderColor:'#8b97b3', borderDash:[6,4], tension:.25}];
+  mainChart = drawChart('mainChart', mainChart, labels, ds);
+
+  $('nextBtn').textContent = g.year === 0 ? 'Bắt đầu năm 1' : `Sang năm ${g.year+1}`;
+}
+
+function drawChart(id, old, labels, datasets){
+  if(typeof Chart === 'undefined') return null; // không có internet thì bỏ qua biểu đồ
+  if(old) old.destroy();
+  return new Chart($(id), {type:'line', data:{labels, datasets},
+    options:{responsive:true, maintainAspectRatio:false, interaction:{mode:'index', intersect:false},
+      plugins:{legend:{labels:{color:'#e8edf7'}}, tooltip:{callbacks:{label:c => ' ' + c.dataset.label + ': ' + fmt(c.parsed.y)}}},
+      elements:{point:{radius:2}},
+      scales:{x:{ticks:{color:'#8b97b3'}, grid:{color:'#1d2845'}}, y:{ticks:{color:'#8b97b3', callback:v => fmt(v)}, grid:{color:'#1d2845'}}}}});
+}
+
+/* =========================================================
+   5. POPUP QUYẾT ĐỊNH HÀNG NĂM
+   ========================================================= */
+let mode = 'none';
+
+// Bốc sự kiện ngẫu nhiên cho năm mới, áp dụng ảnh hưởng tức thời
+function drawEvent(){
+  g.ev = null; g.mOver = null; g.forced = 0; g.jobLost = false;
+  if(Math.random() < 0.55){
+    const k = ['baby','job','bear','bull','raise'][Math.floor(Math.random()*5)];
+    g.ev = Object.assign({k}, EVENTS[k]);
+    const forceOut = c => { c = Math.min(c, g.bal); g.bal -= c; g.wd += c; g.forced = c; };
+    if(k === 'baby'){ g.kids++; forceOut(0.3*g.salary); }
+    if(k === 'job'){ g.jobLost = true; forceOut(0.35*g.salary); }
+    if(k === 'raise') g.salary *= 1.15;
+    if(k === 'bear') g.mOver = -(0.30 + Math.random()*0.15);
+    if(k === 'bull') g.mOver = 0.28 + Math.random()*0.12;
+  }
+}
+
+function openYear(){
+  if(g.year >= YEARS) return;
+  g.year++; drawEvent(); mode = 'none'; render();
+  const vz = valZone();
+  const opts = Object.entries(STYLES).map(([k,s]) => `<option value="${k}" ${k===g.style?'selected':''}>${s.name} — ${s.risk}</option>`).join('');
+  $('modal').innerHTML = `
+    <h2>Năm ${g.year} · Tuổi ${g.age + g.year - 1}</h2>
+    ${g.ev ? `<div class="banner ${g.ev.cls}"><b>${g.ev.t}</b><br><span class="mute">${g.ev.d}${g.forced?` (đã chi ${fmt(g.forced)})`:''}</span></div>` : '<p class="mute row">Năm nay không có biến cố gì đặc biệt.</p>'}
+    <p class="row">Tài sản: <b class="num">${fmt(g.bal)}</b> · Có thể đầu tư thêm: <b class="num">${fmt(investable())}</b></p>
+    <div class="banner ${vz.c==='up'?'good':vz.c==='down'?'bad':''}"><b>Định giá: P/E ${g.pe.toFixed(1)} · P/B ${g.pb.toFixed(1)} — ${vz.t}</b><br><span class="mute">${vz.h}</span></div>
+    <label>Bạn muốn làm gì với danh mục?</label>
+    <div class="seg" id="seg">
+      <button data-m="none" class="on">Không nạp</button><button data-m="fix">Nạp cố định</button>
+      <button data-m="pct">Nạp % thu nhập</button><button data-m="wd">Bán rút tiền</button></div>
+    <div class="row hidden" id="amtRow"><label id="amtLbl"></label><input id="amt" type="number" min="0" value="20"></div>
+    <div class="row"><label>Phong cách đầu tư (đổi sẽ mất ${SWITCH_FEE*100}% tài sản)</label><select id="newStyle">${opts}</select></div>
+    <button id="okBtn" style="width:100%">Xác nhận & qua năm ${g.year}</button>`;
+  $('overlay').classList.remove('hidden');
+  document.querySelectorAll('#seg button').forEach(b => b.onclick = () => {
+    mode = b.dataset.m;
+    document.querySelectorAll('#seg button').forEach(x => x.classList.toggle('on', x === b));
+    $('amtRow').classList.toggle('hidden', mode === 'none');
+    $('amtLbl').textContent = mode === 'pct' ? 'Phần trăm thu nhập đầu tư được (%)' : mode === 'fix' ? 'Số tiền nạp (triệu đồng)' : 'Số tiền rút (triệu đồng)';
+    $('amt').value = mode === 'pct' ? 10 : 20;
+  });
+  $('okBtn').onclick = confirmYear;
+}
+
+/* =========================================================
+   6. XỬ LÝ HẾT NĂM
+   ========================================================= */
+function confirmYear(){
+  const amt = Math.max(0, +$('amt').value || 0), ns = $('newStyle').value;
+  // (a) đổi phong cách -> trừ phí
+  if(ns !== g.style){ const fee = g.bal*SWITCH_FEE; g.bal -= fee; g.fees += fee; g.style = ns; }
+  // (b) dòng tiền
+  let flow = 0;
+  if(mode === 'fix') flow = Math.min(amt*1e6, investable());
+  if(mode === 'pct') flow = investable() * Math.min(amt,100)/100;
+  if(mode === 'wd')  flow = -Math.min(amt*1e6, g.bal);
+  if(flow > 0) g.dep += flow; else g.wd -= flow;
+  // (c) lợi suất thị trường = dữ liệu gốc + hồi quy theo định giá (P/E cao -> kỳ vọng thấp, P/E thấp -> kỳ vọng cao)
+  const m = g.mOver !== null ? g.mOver : MARKET[(g.year-1 + g.offset) % MARKET.length] + (16 - g.pe)*0.004;
+  const pe0 = g.pe;
+  let r;
+  if(g.style === 'dca'){            // tích sản hàng tháng
+    const before = g.bal + flow;
+    g.bal = dcaYear(g.bal, flow, m);
+    r = before > 0 ? g.bal/before - 1 : 0;
+  } else {                          // các phong cách khác: nạp một lần đầu năm
+    g.bal += flow;
+    r = styleReturn(g.style, m);
+    g.bal = Math.max(0, g.bal*(1+r));
+  }
+  // định giá năm sau: giá tăng nhanh hơn lợi nhuận/giá trị sổ sách thì P/E, P/B tăng
+  g.pe = clamp(g.pe*(1+m)/1.07, 8, 34); g.pb = clamp(g.pb*(1+m)/1.05, 1, 5.5);
+  g.mkts.push(m);
+  g.rows.push({y:g.year, ev:g.ev ? g.ev.t : '—', flow:flow - g.forced, m, r, bal:g.bal, pe:pe0});
+  g.assets.push(g.bal); g.contrib.push(g.initial + g.dep - g.wd);
+  g.salary *= 1.03; // lương tăng 3%/năm
+  $('overlay').classList.add('hidden');
+  if(r <= -0.999) alert('💥 Tài khoản đòn bẩy bị cháy (margin call)! Bạn mất gần hết số tiền trong danh mục.');
+  g.year >= YEARS ? showEnd() : render();
+}
+
+/* =========================================================
+   7. MÀN HÌNH KẾT THÚC & SO SÁNH
+   ========================================================= */
+function showEnd(){
+  $('game').classList.add('hidden'); $('end').classList.remove('hidden');
+  const pmt = g.dep / YEARS;                       // nạp trung bình mỗi năm
+  const sav=[g.initial], idx=[g.initial], tim=[g.initial];
+  let b = g.initial, t = g.initial, inMarket = true;
+  for(let i = 0; i < YEARS; i++){
+    const m = g.mkts[i];
+    sav.push(compound(g.initial, pmt, 0.05, 1, i+1));        // gửi tiết kiệm 5%
+    b = b*(1+m) + pmt*Math.sqrt(Math.max(1+m,0)); idx.push(b);                       // nạp đều + giữ Index
+    if(inMarket){ t = (t + pmt)*(1+m); if(m < -0.10) inMarket = false; } // bán đáy sau khi giảm sâu
+    else { t += pmt; if(m > 0.15) inMarket = true; }          // mua lại sau khi đã tăng (FOMO đỉnh)
+    tim.push(t);
+  }
+  const net = g.initial + g.dep - g.wd, you = g.bal;
+  const sc = [['Bạn (thực tế)', you, net], ['Gửi tiết kiệm 5%/năm', sav[YEARS], g.initial + pmt*YEARS],
+              ['Tích sản hàng tháng + Giữ Index', idx[YEARS], g.initial + pmt*YEARS], ['Timing sai (FOMO đỉnh, bán đáy)', tim[YEARS], g.initial + pmt*YEARS]];
+  $('cmp').innerHTML = `<tr><th>Kịch bản</th><th>Tiền bỏ ra</th><th>Tài sản cuối</th><th>Lãi ròng</th><th>So với bạn</th></tr>` +
+    sc.map((s,i) => `<tr><td>${s[0]}</td><td class="num">${fmt(s[2])}</td><td class="num"><b>${fmt(s[1])}</b></td>
+      <td class="num ${s[1]-s[2]>=0?'up':'down'}">${fmt(s[1]-s[2])}</td>
+      <td class="num ${s[1]-you>0?'down':'up'}">${i?fmt(s[1]-you):'—'}</td></tr>`).join('');
+  endChart = drawChart('endChart', endChart, sav.map((_, i) => 'Năm ' + i), [
+    {label:'Bạn', data:g.assets, borderColor:'#f0b429', tension:.25},
+    {label:'Tiết kiệm 5%', data:sav, borderColor:'#8b97b3', tension:.25},
+    {label:'Tích sản hàng tháng + Index', data:idx, borderColor:'#16c784', tension:.25},
+    {label:'Timing sai', data:tim, borderColor:'#ea3943', tension:.25}]);
+
+  const interest = Math.max(0, you - net);
+  $('lessons').innerHTML = `<h2>Bài học rút ra</h2>
+    <p class="row"><b>1. Lãi kép làm việc nhiều nhất ở cuối.</b> Bạn bỏ ra ${fmt(net)} nhưng tài sản cuối là ${fmt(you)}${you>net?`: ${(interest/Math.max(you,1)*100).toFixed(0)}% giá trị đến từ lãi sinh ra lãi.`:'. Lần này lãi không bù được rủi ro, hãy xem lại phong cách và thời điểm bạn đổi.'}</p>
+    <p class="row"><b>2. DCA thắng cảm xúc.</b> Nạp đều ${fmt(pmt)}/năm vào Index cho kết quả ${fmt(idx[YEARS])}, ${idx[YEARS]>=you?`hơn bạn ${fmt(idx[YEARS]-you)}`:`kém bạn ${fmt(you-idx[YEARS])}, nhưng bạn đã chấp nhận rủi ro cao hơn`}. Nạp đều giúp mua nhiều đơn vị hơn khi giá rẻ, nên thị trường sập lại là cơ hội.</p>
+    <p class="row"><b>3. Timing thị trường rất đắt.</b> Bán sau khi giảm và mua lại sau khi tăng cho ${fmt(tim[YEARS])}, ${tim[YEARS]<idx[YEARS]?`thấp hơn giữ Index ${fmt(idx[YEARS]-tim[YEARS])}`:'dù lần này may mắn không thiệt'}. Những năm tăng mạnh nhất thường nằm ngay sau những năm giảm sâu.</p>
+    <p><b>4. Rủi ro cao không đảm bảo lợi nhuận cao.</b> Bạn đã trả ${fmt(g.fees)} phí đổi phong cách. Crypto và đòn bẩy có thể xóa sạch tài khoản; kỷ luật nạp đều và giữ lâu dài thường bền hơn.</p>
+    <p class="row"><b>5. Định giá cho biết bạn đang trả giá nào.</b> P/E và P/B cao thì lợi suất kỳ vọng thấp, thấp thì kỳ vọng cao. Bạn không cần đoán đỉnh đáy: tích sản hàng tháng tự động mua nhiều đơn vị hơn khi giá rẻ và ít hơn khi giá đắt.</p>
+    <p class="mute" style="margin-top:10px">Đây là mô phỏng giáo dục với dữ liệu giả lập, không phải lời khuyên đầu tư.</p>`;
+}
+
+/* =========================================================
+   8. KHỞI ĐỘNG
+   ========================================================= */
+$('goBtn').onclick = startGame;
+$('nextBtn').onclick = openYear;
+$('againBtn').onclick = () => location.reload();
+renderStyleCards();
+</script>
+</body>
+</html>
